@@ -57,6 +57,7 @@ def main():
     train(args.env, num_timesteps=args.num_timesteps, seed=args.seed,
           save_model=args.save_model, load_model=args.load_model, model_dir=args.model_dir)
 
+    train(args.env, num_timesteps=args.num_timesteps, seed=args.seed, save_model=args.save_model)
 
 if __name__ == '__main__':
     main()
