@@ -235,7 +235,7 @@ def learn(env, policy_fn, *,
                 # sess = U.get_session()
                 # constant_graph = graph_util.convert_variables_to_constants(sess, sess.graph.as_graph_def(), ['pi/output_node'])
                 # graph_io.write_graph(constant_graph, '.', 'output_graph.pb', as_text=False)
-                saver.save(U.get_session(), os.path.join(logger.get_dir(),'model', 'model'))
+                saver.save(tf.get_default_session(), os.path.join(logger.get_dir(),'model', 'model'))
 
 def flatten_lists(listoflists):
     return [el for list_ in listoflists for el in list_]
