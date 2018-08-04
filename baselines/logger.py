@@ -7,6 +7,7 @@ import time
 import datetime
 import tempfile
 from collections import defaultdict
+from mpi4py import MPI
 
 DEBUG = 10
 INFO = 20
