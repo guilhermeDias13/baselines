@@ -124,6 +124,7 @@ def learn(env, policy_fn, *,
     losses = [pol_surr, pol_entpen, vf_loss, meankl, meanent]
     loss_names = ["pol_surr", "pol_entpen", "vf_loss", "kl", "ent"]
 
+#    var_list = pi.get_trainable_variables()[:-6]
     var_list = pi.get_trainable_variables()
     lossandgrad = U.function([ob, ac, atarg, ret, lrmult], losses + [U.flatgrad(total_loss, var_list)])
     adam = MpiAdam(var_list, epsilon=adam_epsilon)
@@ -154,11 +155,11 @@ def learn(env, policy_fn, *,
 
     # Set up logging stuff only for a single worker.
     if rank == 0:
-        saver = tf.train.Saver()
+        saver = tf.train.Saver() 
         if not os.path.exists(os.path.join(logger.get_dir(), 'model')):
             os.makedirs(os.path.join(logger.get_dir(), 'model'))
     else:
-        saver = None
+         saver = None
 
     while True:
         if callback: callback(locals(), globals())
@@ -230,10 +231,11 @@ def learn(env, policy_fn, *,
         logger.record_tabular("TimeElapsed", time.time() - tstart)
         if rank == 0:
             logger.dump_tabular()
-        if save_model: #Save model
-            saver.save(tf.get_default_session(), os.path.join(logger.get_dir(),'model', 'model'))
-
-    return pi
+            if save_model: #Save model
+                # sess = U.get_session()
+                # constant_graph = graph_util.convert_variables_to_constants(sess, sess.graph.as_graph_def(), ['pi/output_node'])
+                # graph_io.write_graph(constant_graph, '.', 'output_graph.pb', as_text=False)
+                saver.save(U.get_session(), os.path.join(logger.get_dir(),'model', 'model'))
 
 def flatten_lists(listoflists):
     return [el for list_ in listoflists for el in list_]
