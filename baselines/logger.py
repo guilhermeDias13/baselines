@@ -365,10 +365,11 @@ import os
 from datetime import datetime
 LOG_TIME = datetime.now().strftime("%Y%m%d-%H%M%S")
 LOG_DIR = os.path.join("logs", LOG_TIME)
+LOG_DIR = os.path.join(LOG_DIR, str(MPI.COMM_WORLD.Get_rank()))
 HUMAN_DIR = os.path.join(LOG_DIR, "text")
 TENSORFLOW_DIR = os.path.join(LOG_DIR, "tf")
 Logger.DEFAULT = Logger.CURRENT = Logger(dir=LOG_DIR,
-                                         output_formats=[HumanOutputFormat(os.path.join(HUMAN_DIR, "log.txt")), TensorBoardOutputFormat(TENSORFLOW_DIR)])
+                                        output_formats=[HumanOutputFormat(os.path.join(HUMAN_DIR, "log.txt")), TensorBoardOutputFormat(TENSORFLOW_DIR)])
 
 def configure(dir=None, format_strs=None):
     if dir is None:
