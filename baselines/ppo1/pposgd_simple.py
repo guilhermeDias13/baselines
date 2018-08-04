@@ -230,8 +230,8 @@ def learn(env, policy_fn, *,
         logger.record_tabular("TimeElapsed", time.time() - tstart)
         if rank == 0:
             logger.dump_tabular()
-        if save_model: #Save model
-            saver.save(tf.get_default_session(), os.path.join(logger.get_dir(),'model', 'model'))
+            if save_model: #Save model
+                saver.save(tf.get_default_session(), os.path.join(logger.get_dir(),'model', 'model'))
 
     return pi
 
