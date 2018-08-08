@@ -365,8 +365,8 @@ class Logger(object):
 import os
 from datetime import datetime
 LOG_TIME = datetime.now().strftime("%Y%m%d-%H%M%S")
+LOG_TIME = LOG_TIME + "_" + str(MPI.COMM_WORLD.Get_rank())
 LOG_DIR = os.path.join("logs", LOG_TIME)
-LOG_DIR = os.path.join(LOG_DIR, str(MPI.COMM_WORLD.Get_rank()))
 HUMAN_DIR = os.path.join(LOG_DIR, "text")
 TENSORFLOW_DIR = os.path.join(LOG_DIR, "tf")
 Logger.DEFAULT = Logger.CURRENT = Logger(dir=LOG_DIR,
