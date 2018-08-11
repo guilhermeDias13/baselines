@@ -133,7 +133,7 @@ def learn(env, policy_fn, *,
         for (oldv, newv) in zipsame(oldpi.get_variables(), pi.get_variables())])
     compute_losses = U.function([ob, ac, atarg, ret, lrmult], losses)
 
-    U.initialize()
+    #U.initialize()
     adam.sync()
 
     # Load existing model

@@ -39,11 +39,11 @@ class KickPolicy(object):
         valueFunction.add(Dense(50))
         valueFunction.add(LeakyReLU())
         valueFunction.add(Dense(23))
-        valueFunction.load_weights("ut_kick")
+        valueFunction.load_weights("neural_kick")
 
         #for i in range(num_hid_layers):
         #    last_out = tf.nn.tanh(U.dense(last_out, hid_size, "vffc%i"%(i+1), weight_init=U.normc_initializer(1.0)))
-        self.vpred = U.dense(valueFunction.output, 1, "vffinal", weight_init=U.normc_initializer(1.0))[:,0]
+        self.vpred = self.dense(x = valueFunction.output, size = 1, name = "vffinal", weight_init = U.normc_initializer(1.0), bias = True)[:,0]
 
         model =  Sequential()
         model.add(InputLayer(input_tensor = obz))
@@ -52,16 +52,15 @@ class KickPolicy(object):
         model.add(Dense(50))
         model.add(LeakyReLU())
         model.add(Dense(23))
-        model.load_weights("ut_kick")
-
+        model.load_weights("neural_kick")
         # for i in range(num_hid_layers):'
         #     last_out = tf.nn.tanh(U.dense(last_out, hid_size, "polfc%i"%(i+1), weight_init=U.normc_initializer(1.0)))
         if gaussian_fixed_var and isinstance(ac_space, gym.spaces.Box):
             mean = model.output            
             logstd = tf.get_variable(name="logstd", shape=[1, pdtype.param_shape()[0]//2], initializer=tf.zeros_initializer(), trainable= False)
-            pdparam = U.concatenate([mean, mean * 0.0 + logstd], axis=1)
+            pdparam = tf.concat([mean, mean * 0.0 + logstd], axis=1)
         else:
-            pdparam = U.dense(model.output, pdtype.param_shape()[0], "polfinal", U.normc_initializer(0.01))
+            pdparam = tf.layers.dense(model.output, pdtype.param_shape()[0], "polfinal", U.normc_initializer(0.01))
        # my_var = tf.strided_slice(mean, [0], [1], [1], shrink_axis_mask=1)
        # my_var_out = tf.identity(my_var, name='output_node')
         self.pd = pdtype.pdfromflat(pdparam)
@@ -70,7 +69,8 @@ class KickPolicy(object):
 
 
         stochastic = tf.placeholder(dtype=tf.bool, shape=())
-        ac = U.switch(stochastic, self.pd.sample(), self.pd.mode())
+        #ac = U.switch(stochastic, self.pd.sample(), self.pd.mode())
+        ac = model.output
         self._act = U.function([stochastic, ob], [ac, self.vpred])
 
     def act(self, stochastic, ob):
@@ -83,4 +83,11 @@ class KickPolicy(object):
     def get_initial_state(self):
         return []
 
-
+    def dense(self, x, size, name, weight_init=None, bias=True):
+     w = tf.get_variable(name + "/w", [x.get_shape()[1], size], initializer=weight_init)
+     ret = tf.matmul(x, w)
+     if bias:
+         b = tf.get_variable(name + "/b", [size], initializer=tf.zeros_initializer())
+         return ret + b
+     else:
+         return ret
