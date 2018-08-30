@@ -3,6 +3,7 @@ from baselines import logger
 import baselines.common.tf_util as U
 import os
 import tensorflow as tf, numpy as np
+from tensorflow.python.framework import graph_util, graph_io
 import time
 from baselines.common.mpi_adam import MpiAdam
 from baselines.common.mpi_moments import mpi_moments
@@ -133,7 +134,7 @@ def learn(env, policy_fn, *,
         for (oldv, newv) in zipsame(oldpi.get_variables(), pi.get_variables())])
     compute_losses = U.function([ob, ac, atarg, ret, lrmult], losses)
 
-    U.initialize()
+    #U.initialize()
     adam.sync()
 
     # Load existing model
@@ -155,7 +156,7 @@ def learn(env, policy_fn, *,
 
     # Set up logging stuff only for a single worker.
     if rank == 0:
-        saver = tf.train.Saver() 
+        saver = tf.train.Saver()
         if not os.path.exists(os.path.join(logger.get_dir(), 'model')):
             os.makedirs(os.path.join(logger.get_dir(), 'model'))
     else:
@@ -232,7 +233,7 @@ def learn(env, policy_fn, *,
         if rank == 0:
             logger.dump_tabular()
             if save_model: #Save model
-                # sess = U.get_session()
+                # sess = tf.get_default_session()
                 # constant_graph = graph_util.convert_variables_to_constants(sess, sess.graph.as_graph_def(), ['pi/output_node'])
                 # graph_io.write_graph(constant_graph, '.', 'output_graph.pb', as_text=False)
                 saver.save(tf.get_default_session(), os.path.join(logger.get_dir(),'model', 'model'))
