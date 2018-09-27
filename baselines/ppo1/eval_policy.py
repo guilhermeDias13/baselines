@@ -22,7 +22,7 @@ def eval(env, model_dir):
 
     def policy_fn(name, ob_space, ac_space):
         return mlp_policy.MlpPolicy(name=name, ob_space=ob_space, ac_space=ac_space,
-            hid_size=64, num_hid_layers=2)
+            hid_size=512, num_hid_layers=2)
     pi = policy_fn("pi", ob_space, ac_space) # Construct network for new policy
 
     # Load variables
