@@ -27,11 +27,11 @@ def train(env_id, num_timesteps, seed, save_model, load_model, model_dir):
     env = bench.Monitor(env, logger.get_dir())
     env.seed(workerseed)
     gym.logger.setLevel(logging.WARN)
-    pposgd_simple.learn(env, policy_fn,
+    pposgd_simple.learn(env, policy_fn, 
                         max_timesteps=num_timesteps,
-                        timesteps_per_actorbatch=256,
+                        timesteps_per_actorbatch=4096,
                         clip_param=0.2, entcoeff=0.0,
-                        optim_epochs=10, optim_stepsize=1e-3, optim_batchsize=128,
+                        optim_epochs=10, optim_stepsize=1e-6, optim_batchsize=2048,
                         gamma=0.99, lam=0.95, schedule='linear',
                         save_model=save_model, load_model=load_model, model_dir=model_dir
                         )
