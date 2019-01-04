@@ -125,7 +125,7 @@ def learn(env, policy_fn, *,
     losses = [pol_surr, pol_entpen, vf_loss, meankl, meanent]
     loss_names = ["pol_surr", "pol_entpen", "vf_loss", "kl", "ent"]
 
-#    var_list = pi.get_trainable_variables()[:-6]
+
     var_list = pi.get_trainable_variables()
     lossandgrad = U.function([ob, ac, atarg, ret, lrmult], losses + [U.flatgrad(total_loss, var_list)])
     adam = MpiAdam(var_list, epsilon=adam_epsilon)
@@ -234,9 +234,9 @@ def learn(env, policy_fn, *,
         if rank == 0:
             logger.dump_tabular()
             if save_model: #Save model
-                # sess = tf.get_default_session()
-                # constant_graph = graph_util.convert_variables_to_constants(sess, sess.graph.as_graph_def(), ['pi/output_node'])
-                # graph_io.write_graph(constant_graph, '.', 'output_graph.pb', as_text=False)
+                sess = tf.get_default_session()
+                constant_graph = graph_util.convert_variables_to_constants(sess, sess.graph.as_graph_def(), ['pi/output_node'])
+                graph_io.write_graph(constant_graph, '.', 'output_graph.pb', as_text=False)
                 saver.save(tf.get_default_session(), os.path.join(logger.get_dir(),'model', 'model'))
 
 def flatten_lists(listoflists):

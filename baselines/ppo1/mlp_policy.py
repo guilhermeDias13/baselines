@@ -40,8 +40,8 @@ class MlpPolicy(object):
             else:
                 pdparam = tf.layers.dense(last_out, pdtype.param_shape()[0], name='final', kernel_initializer=U.normc_initializer(0.01))
 
-        # my_var = tf.strided_slice(mean, [0], [1], [1], shrink_axis_mask=1)
-        # my_var_out = tf.identity(my_var, name='output_node')
+        my_var = tf.strided_slice(mean, [0], [1], [1], shrink_axis_mask=1)
+        my_var_out = tf.identity(my_var, name='output_node')
         self.pd = pdtype.pdfromflat(pdparam)
 
         self.state_in = []
