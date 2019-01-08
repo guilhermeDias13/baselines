@@ -10,7 +10,7 @@ from baselines.common.mpi_moments import mpi_moments
 from mpi4py import MPI
 from collections import deque
 
-def traj_segment_generator(pi, env, horizon, stochastic):
+def traj_segment_generator(pi, env, horizon, stochastic, rw_scaler):
     t = 0
     ac = env.action_space.sample() # not used, just so we have the datatype
     new = True # marks if we're on first timestep of an episode
@@ -52,6 +52,7 @@ def traj_segment_generator(pi, env, horizon, stochastic):
         prevacs[i] = prevac
 
         ob, rew, new, _ = env.step(ac)
+        rew, mean, std = rw_scaler.scale(rew)
         # env.render()
         rews[i] = rew
 
@@ -92,7 +93,8 @@ def learn(env, policy_fn, *,
         schedule='constant', # annealing for stepsize parameters (epsilon and adam)
         save_model=True, # whether to save the model,
         load_model=True,
-        model_dir=None):
+        model_dir=None,
+        rw_scaler=None):
     rank = MPI.COMM_WORLD.Get_rank()
 
     # Setup losses and stuff
@@ -144,7 +146,7 @@ def learn(env, policy_fn, *,
 
     # Prepare for rollouts
     # ----------------------------------------
-    seg_gen = traj_segment_generator(pi, env, timesteps_per_actorbatch, stochastic=True)
+    seg_gen = traj_segment_generator(pi, env, timesteps_per_actorbatch, stochastic=True, rw_scaler = rw_scaler)
 
     episodes_so_far = 0
     timesteps_so_far = 0
@@ -194,6 +196,7 @@ def learn(env, policy_fn, *,
         optim_batchsize = optim_batchsize or ob.shape[0]
 
         if hasattr(pi, "ob_rms"): pi.ob_rms.update(ob) # update running mean/std for policy
+        if hasattr(rw_scaler, "rw_rms"): rw_scaler.rw_rms.update(seg["rew"]) # update running mean/std for policy
 
         assign_old_eq_new() # set old parameter values to new parameter values
         logger.log("Optimizing...")
