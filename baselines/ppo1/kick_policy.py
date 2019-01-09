@@ -33,23 +33,19 @@ class KickPolicy(object):
 
         valueFunction = Sequential()
         valueFunction.add(InputLayer(input_tensor = obz))
-        valueFunction.add(Dense(75))
-        valueFunction.add(LeakyReLU())
-        valueFunction.add(Dense(50))
-        valueFunction.add(LeakyReLU())
+        valueFunction.add(Dense(64, activation='tanh'))
+        valueFunction.add(Dense(64, activation='tanh'))
         valueFunction.add(Dense(23))
-        valueFunction.load_weights("neural_kick")
+        valueFunction.load_weights("ut_19m")
 
         self.vpred = self.dense(x = valueFunction.output, size = 1, name = "vffinal", weight_init = U.normc_initializer(1.0), bias = True)[:,0]
 
         model =  Sequential()
         model.add(InputLayer(input_tensor = obz))
-        model.add(Dense(75))
-        model.add(LeakyReLU())
-        model.add(Dense(50))
-        model.add(LeakyReLU())
+        model.add(Dense(64, activation='tanh'))
+        model.add(Dense(64, activation='tanh'))
         model.add(Dense(23))
-        model.load_weights("neural_kick")
+        model.load_weights("ut_19m")
         
         if gaussian_fixed_var and isinstance(ac_space, gym.spaces.Box):
             mean = model.output            
