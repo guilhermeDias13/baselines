@@ -16,8 +16,10 @@ def traj_segment_generator(pi, env, horizon, stochastic, rw_scaler):
     new = True # marks if we're on first timestep of an episode
     ob = env.reset()
     cur_ep_ret = 0 # return in current episode
+    cur_ep_true_ret = 0
     cur_ep_len = 0 # len of current episode
     ep_rets = [] # returns of completed episodes in this segment
+    ep_true_rets = []
     ep_lens = [] # lengths of ...
 
     # Initialize history arrays
@@ -39,10 +41,11 @@ def traj_segment_generator(pi, env, horizon, stochastic, rw_scaler):
         if t > 0 and t % horizon == 0:
             yield {"ob" : obs, "rew" : rews, "vpred" : vpreds, "new" : news,
                     "ac" : acs, "prevac" : prevacs, "nextvpred": vpred * (1 - new),
-                    "ep_rets" : ep_rets, "ep_lens" : ep_lens}
+                    "ep_rets" : ep_rets, "ep_true_rets" : ep_true_rets, "ep_lens" : ep_lens}
             # Be careful!!! if you change the downstream algorithm to aggregate
             # several of these batches, then be sure to do a deepcopy
             ep_rets = []
+            ep_true_rets = []
             ep_lens = []
         i = t % horizon
         obs[i] = ob
@@ -52,15 +55,19 @@ def traj_segment_generator(pi, env, horizon, stochastic, rw_scaler):
         prevacs[i] = prevac
 
         ob, rew, new, _ = env.step(ac)
+        true_rew = rew
         rew, mean, std = rw_scaler.scale(rew)
         # env.render()
         rews[i] = rew
 
+        cur_ep_true_ret += true_rew
         cur_ep_ret += rew
         cur_ep_len += 1
         if new:
             ep_rets.append(cur_ep_ret)
             ep_lens.append(cur_ep_len)
+            ep_true_rets.append(cur_ep_true_ret)
+            cur_ep_true_ret = 0
             cur_ep_ret = 0
             cur_ep_len = 0
             ob = env.reset()
@@ -154,6 +161,7 @@ def learn(env, policy_fn, *,
     tstart = time.time()
     lenbuffer = deque(maxlen=100) # rolling buffer for episode lengths
     rewbuffer = deque(maxlen=100) # rolling buffer for episode rewards
+    true_rewbuffer = deque(maxlen=100)
 
     assert sum([max_iters>0, max_timesteps>0, max_episodes>0, max_seconds>0])==1, "Only one time constraint permitted"
 
@@ -220,11 +228,13 @@ def learn(env, policy_fn, *,
         for (lossval, name) in zipsame(meanlosses, loss_names):
             logger.record_tabular("loss_"+name, lossval)
         logger.record_tabular("ev_tdlam_before", explained_variance(vpredbefore, tdlamret))
-        lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
+        lrlocal = (seg["ep_lens"], seg["ep_rets"], seg["ep_true_rets"]) # local values
         listoflrpairs = MPI.COMM_WORLD.allgather(lrlocal) # list of tuples
-        lens, rews = map(flatten_lists, zip(*listoflrpairs))
+        lens, rews, true_rews = map(flatten_lists, zip(*listoflrpairs))
         lenbuffer.extend(lens)
         rewbuffer.extend(rews)
+        true_rewbuffer.extend(true_rews)
+        logger.record_tabular("EpTrueRewMean", np.mean(true_rewbuffer))
         logger.record_tabular("EpLenMean", np.mean(lenbuffer))
         logger.record_tabular("EpRewMean", np.mean(rewbuffer))
         logger.record_tabular("EpThisIter", len(lens))
