@@ -56,7 +56,7 @@ def traj_segment_generator(pi, env, horizon, stochastic, rw_scaler):
 
         ob, rew, new, _ = env.step(ac)
         true_rew = rew
-        rew, mean, std = rw_scaler.scale(rew)
+        rew = 0.01 * true_rew
         # env.render()
         rews[i] = rew
 
