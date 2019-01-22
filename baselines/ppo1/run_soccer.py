@@ -14,7 +14,7 @@ from core.soccer_env import SoccerEnv
 
 
 def train(env_id, num_timesteps, seed, save_model, load_model, model_dir):
-    from baselines.ppo1 import kick_policy, pposgd_simple, reward_scaler
+    from baselines.ppo1 import lstm_policy, pposgd_simple, reward_scaler
     rank = MPI.COMM_WORLD.Get_rank()
     U.make_session(num_cpu=1).__enter__()
     workerseed = seed + 10000 * rank
@@ -22,13 +22,12 @@ def train(env_id, num_timesteps, seed, save_model, load_model, model_dir):
     env = SoccerEnv(rank)
 
     def policy_fn(name, ob_space, ac_space):
-        return kick_policy.KickPolicy(name=name, ob_space=ob_space, ac_space=ac_space,
+        return lstm_policy.LSTMPolicy(name=name, ob_space=ob_space, ac_space=ac_space,
                                     hid_size=64, num_hid_layers=2)
     env = bench.Monitor(env, logger.get_dir())
     env.seed(workerseed)
     gym.logger.setLevel(logging.WARN)
 
-    rw_scaler = reward_scaler.RewardScaler("rw_scaler")
     pposgd_simple.learn(env, policy_fn, 
                         max_timesteps=num_timesteps,
                         timesteps_per_actorbatch=512,
@@ -36,7 +35,6 @@ def train(env_id, num_timesteps, seed, save_model, load_model, model_dir):
                         optim_epochs=30, optim_stepsize=1e-6, optim_batchsize=128,
                         gamma=0.99, lam=1.0, schedule='linear',
                         save_model=save_model, load_model=load_model, model_dir=model_dir, 
-                        rw_scaler=rw_scaler
                         )
     env.close()
 
