@@ -151,6 +151,9 @@ def learn(env, policy_fn, *,
     if load_model:
         U.load_state(os.path.join(model_dir, "model"))
 
+    # Reinitialize exploration
+    reinitialize_exploration(tf.get_default_session())
+
     # Prepare for rollouts
     # ----------------------------------------
     seg_gen = traj_segment_generator(pi, env, timesteps_per_actorbatch, stochastic=True, rw_scaler = rw_scaler)
@@ -264,3 +267,16 @@ def initialize_uninitialized(sess):
         print (str(i.name))
     if len(not_initialized_vars):
         sess.run(tf.variables_initializer(not_initialized_vars))
+
+def reinitialize_exploration(sess):
+    global_vars = tf.global_variables()
+    expl_vars = []
+    for var in global_vars:
+        if str(var.name) == 'pi/logstd:0' or  str(var.name) == 'oldpi/logstd:0':
+            expl_vars.append(var)
+    
+    for i in expl_vars:
+        print (str(i.name))
+    
+    if len(expl_vars):
+        sess.run(tf.variables_initializer(expl_vars))
