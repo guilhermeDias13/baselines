@@ -152,7 +152,7 @@ def learn(env, policy_fn, *,
         U.load_state(os.path.join(model_dir, "model"))
 
     # Reinitialize exploration
-    reinitialize_exploration(tf.get_default_session())
+    #reinitialize_exploration(tf.get_default_session())
 
     # Prepare for rollouts
     # ----------------------------------------
@@ -252,7 +252,7 @@ def learn(env, policy_fn, *,
             if save_model: #Save model
                 sess = tf.get_default_session()
                 constant_graph = graph_util.convert_variables_to_constants(sess, sess.graph.as_graph_def(), ['pi/output_node'])
-                graph_io.write_graph(constant_graph, '.', 'output_graph.pb', as_text=False)
+                graph_io.write_graph(constant_graph, logger.get_dir(), 'output_graph.pb', as_text=False)
                 saver.save(tf.get_default_session(), os.path.join(logger.get_dir(),'model', 'model'))
 
 def flatten_lists(listoflists):
