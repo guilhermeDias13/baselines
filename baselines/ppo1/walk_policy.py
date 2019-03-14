@@ -9,7 +9,7 @@ from keras.models import Model, Sequential
 from keras.layers import LeakyReLU
 import numpy as np
 
-class KickPolicy(object):
+class WalkPolicy(object):
     recurrent = False
      
     def __init__(self, name, *args, **kwargs):
@@ -33,21 +33,19 @@ class KickPolicy(object):
 
         valueFunction = Sequential()
         valueFunction.add(InputLayer(input_tensor = obz))
-        valueFunction.add(Dense(64, activation='tanh'))
-        valueFunction.add(Dense(64, activation='tanh'))
+        valueFunction.add(Dense(11, activation='relu'))
 
         self.vpred = self.dense(x = valueFunction.output, size = 1, name = "vffinal", weight_init = U.normc_initializer(1.0), bias = True)[:,0]
 
         model =  Sequential()
         model.add(InputLayer(input_tensor = obz))
-        model.add(Dense(64, activation='tanh'))
-        model.add(Dense(64, activation='tanh'))
-        model.add(Dense(23))
-        model.load_weights("neural_kick")
+        #weights = np.array([0.1, 0.2, 0.32, 0.05, 0.8, 0.9, 0.9, 0.4, 1.7, 3.14, 1.0]).reshape((1,11))
+        weights = np.ones(11).reshape((1, 11))
+        model.add(Dense(11, activation='relu', weights = [weights, np.zeros(11)]))
         
         if gaussian_fixed_var and isinstance(ac_space, gym.spaces.Box):
             mean = model.output            
-            logstd = tf.get_variable(name="logstd", shape=[1, pdtype.param_shape()[0]//2], initializer=tf.constant_initializer(-5))
+            logstd = tf.get_variable(name="logstd", shape=[1, pdtype.param_shape()[0]//2], initializer=tf.constant_initializer(-3))
             pdparam = tf.concat([mean, mean * 0.0 + logstd], axis=1)
         else:
             pdparam = tf.layers.dense(model.output, pdtype.param_shape()[0], "polfinal", U.normc_initializer(0.01))
