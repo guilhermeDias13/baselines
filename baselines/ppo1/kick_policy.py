@@ -17,7 +17,7 @@ class KickPolicy(object):
             self._init(*args, **kwargs)
             self.scope = tf.get_variable_scope().name
             
-    def _init(self, ob_space, ac_space, hid_size, num_hid_layers, gaussian_fixed_var=True):
+    def _init(self, ob_space, ac_space, hid_size, num_hid_layers, exploration_rate, gaussian_fixed_var=True):
         assert isinstance(ob_space, gym.spaces.Box)
 
         self.pdtype = pdtype = make_pdtype(ac_space)
@@ -47,7 +47,7 @@ class KickPolicy(object):
         
         if gaussian_fixed_var and isinstance(ac_space, gym.spaces.Box):
             mean = model.output            
-            logstd = tf.get_variable(name="logstd", shape=[1, pdtype.param_shape()[0]//2], initializer=tf.constant_initializer(-5))
+            logstd = tf.get_variable(name="logstd", shape=[1, pdtype.param_shape()[0]//2], initializer=tf.constant_initializer(exploration_rate))
             pdparam = tf.concat([mean, mean * 0.0 + logstd], axis=1)
         else:
             pdparam = tf.layers.dense(model.output, pdtype.param_shape()[0], "polfinal", U.normc_initializer(0.01))

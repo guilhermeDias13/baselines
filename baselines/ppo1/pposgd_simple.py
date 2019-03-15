@@ -101,7 +101,7 @@ def learn(env, policy_fn, *,
         save_model=True, # whether to save the model,
         load_model=True,
         model_dir=None,
-        rw_scaler=None):
+        rw_scaler=None, filename):
     rank = MPI.COMM_WORLD.Get_rank()
 
     # Setup losses and stuff
@@ -252,7 +252,7 @@ def learn(env, policy_fn, *,
             if save_model: #Save model
                 sess = tf.get_default_session()
                 constant_graph = graph_util.convert_variables_to_constants(sess, sess.graph.as_graph_def(), ['pi/output_node'])
-                graph_io.write_graph(constant_graph, logger.get_dir(), 'output_graph.pb', as_text=False)
+                graph_io.write_graph(constant_graph, logger.get_dir(), filename + '.pb', as_text=False)
                 saver.save(tf.get_default_session(), os.path.join(logger.get_dir(),'model', 'model'))
 
 def flatten_lists(listoflists):
