@@ -15,7 +15,7 @@ from core.soccer_env import SoccerEnv
 
 def train(env_id, num_timesteps, seed, save_model, load_model, model_dir, timesteps_per_actorbatch,
         clip_param, ent_coeff, epochs, learning_rate, batch_size, gamma, lambd, exploration_rate, filename):
-    from baselines.ppo1 import walk_policy, pposgd_simple, reward_scaler
+    from baselines.ppo1 import kick_policy, pposgd_simple, reward_scaler
     rank = MPI.COMM_WORLD.Get_rank()
     U.make_session(num_cpu=1).__enter__()
     workerseed = seed + 10000 * rank
