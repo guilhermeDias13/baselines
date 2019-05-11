@@ -4,13 +4,13 @@ import tensorflow as tf
 import gym
 from baselines.common.distributions import make_pdtype
 
-from keras.layers import Input, Dense, Activation, BatchNormalization, Dropout, InputLayer
+from keras.layers import Input, Dense, Activation, BatchNormalization, Dropout, InputLayer, LSTM
 from keras.models import Model, Sequential
 from keras.layers import LeakyReLU
 import numpy as np
 
 class WalkPolicy(object):
-    recurrent = False
+    recurrent = True
      
     def __init__(self, name, *args, **kwargs):
         with tf.variable_scope(name):
@@ -30,37 +30,23 @@ class WalkPolicy(object):
 
         # obz = tf.clip_by_value((ob - self.ob_rms.mean) / self.ob_rms.std, -5.0, 5.0)
         obz = ob
+        obz = tf.reshape(ob, [-1, 10, 17])
 
         valueFunction = Sequential()
         valueFunction.add(InputLayer(input_tensor = obz))
-        valueFunction.add(Dense(128, activation = 'tanh'))
-        valueFunction.add(Dense(128, activation = 'tanh'))
-        valueFunction.add(Dense(128, activation = 'tanh'))
-        valueFunction.add(Dense(128, activation = 'tanh'))
-        valueFunction.add(Dense(128, activation = 'tanh'))
-        valueFunction.add(Dense(128, activation = 'tanh'))
-        valueFunction.add(Dense(128, activation = 'tanh'))
-        valueFunction.add(Dense(64, activation = 'tanh'))
+        valueFunction.add(LSTM(30, input_shape=(10, 17), return_sequences=False))
         valueFunction.add(Dense(14))
-        valueFunction.load_weights('neural_walk')
+        valueFunction.load_weights('lstm_neural_walk')
         
 
         self.vpred = self.dense(x = valueFunction.output, size = 1, name = "vffinal", weight_init = U.normc_initializer(1.0), bias = True)[:,0]
 
         model =  Sequential()
         model.add(InputLayer(input_tensor = obz))
-        model.add(Dense(128, activation = 'tanh'))
-        model.add(Dense(128, activation = 'tanh'))
-        model.add(Dense(128, activation = 'tanh'))
-        model.add(Dense(128, activation = 'tanh'))
-        model.add(Dense(128, activation = 'tanh'))
-        model.add(Dense(128, activation = 'tanh'))
-        model.add(Dense(128, activation = 'tanh'))
-        model.add(Dense(64, activation = 'tanh'))
+        model.add(LSTM(30, input_shape=(10, 17), return_sequences=False))
         model.add(Dense(14))
 
-
-        model.load_weights('neural_walk')
+        model.load_weights('lstm_neural_walk')
         
         if gaussian_fixed_var and isinstance(ac_space, gym.spaces.Box):
             mean = model.output            
@@ -80,7 +66,7 @@ class WalkPolicy(object):
         self._act = U.function([stochastic, ob], [ac, self.vpred])
 
     def act(self, stochastic, ob):
-        ac1, vpred1 =  self._act(False, ob[None])
+        ac1, vpred1 =  self._act(stochastic, ob[None])
         return ac1[0], vpred1[0]
     def get_variables(self):
         return tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.scope)
