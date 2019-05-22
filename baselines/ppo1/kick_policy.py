@@ -31,19 +31,29 @@ class KickPolicy(object):
         # obz = tf.clip_by_value((ob - self.ob_rms.mean) / self.ob_rms.std, -5.0, 5.0)
         obz = ob
 
-        valueFunction = Sequential()
+        N_LAYERS = 12
+        LAYER_SIZE = 128
+        ACTIVATION = 'tanh'
+        OUTPUT_SIZE = 23
+
+        valueFunction =  Sequential()
         valueFunction.add(InputLayer(input_tensor = obz))
-        valueFunction.add(Dense(64, activation='tanh'))
-        valueFunction.add(Dense(64, activation='tanh'))
+        valueFunction.add(Dense(LAYER_SIZE, activation = ACTIVATION))
+        for i in range(N_LAYERS - 2):
+                valueFunction.add(Dense(LAYER_SIZE, activation = ACTIVATION))
+        valueFunction.add(Dense(OUTPUT_SIZE))
+        valueFunction.load_weights('neural_kick_meta_policy')
 
         self.vpred = self.dense(x = valueFunction.output, size = 1, name = "vffinal", weight_init = U.normc_initializer(1.0), bias = True)[:,0]
 
+
         model =  Sequential()
         model.add(InputLayer(input_tensor = obz))
-        model.add(Dense(64, activation='tanh'))
-        model.add(Dense(64, activation='tanh'))
-        model.add(Dense(23))
-        model.load_weights("neural_kick")
+        model.add(Dense(LAYER_SIZE, activation = ACTIVATION))
+        for i in range(N_LAYERS - 2):
+                model.add(Dense(LAYER_SIZE, activation = ACTIVATION))
+        model.add(Dense(OUTPUT_SIZE))
+        model.load_weights('neural_kick_meta_policy')
         
         if gaussian_fixed_var and isinstance(ac_space, gym.spaces.Box):
             mean = model.output            
