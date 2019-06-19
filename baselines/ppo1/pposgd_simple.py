@@ -3,20 +3,23 @@ from baselines import logger
 import baselines.common.tf_util as U
 import os
 import tensorflow as tf, numpy as np
+from tensorflow.python.framework import graph_util, graph_io
 import time
 from baselines.common.mpi_adam import MpiAdam
 from baselines.common.mpi_moments import mpi_moments
 from mpi4py import MPI
 from collections import deque
 
-def traj_segment_generator(pi, env, horizon, stochastic):
+def traj_segment_generator(pi, env, horizon, stochastic, rw_scaler):
     t = 0
     ac = env.action_space.sample() # not used, just so we have the datatype
     new = True # marks if we're on first timestep of an episode
     ob = env.reset()
     cur_ep_ret = 0 # return in current episode
+    cur_ep_true_ret = 0
     cur_ep_len = 0 # len of current episode
     ep_rets = [] # returns of completed episodes in this segment
+    ep_true_rets = []
     ep_lens = [] # lengths of ...
 
     # Initialize history arrays
@@ -38,10 +41,11 @@ def traj_segment_generator(pi, env, horizon, stochastic):
         if t > 0 and t % horizon == 0:
             yield {"ob" : obs, "rew" : rews, "vpred" : vpreds, "new" : news,
                     "ac" : acs, "prevac" : prevacs, "nextvpred": vpred * (1 - new),
-                    "ep_rets" : ep_rets, "ep_lens" : ep_lens}
+                    "ep_rets" : ep_rets, "ep_true_rets" : ep_true_rets, "ep_lens" : ep_lens}
             # Be careful!!! if you change the downstream algorithm to aggregate
             # several of these batches, then be sure to do a deepcopy
             ep_rets = []
+            ep_true_rets = []
             ep_lens = []
         i = t % horizon
         obs[i] = ob
@@ -51,14 +55,19 @@ def traj_segment_generator(pi, env, horizon, stochastic):
         prevacs[i] = prevac
 
         ob, rew, new, _ = env.step(ac)
+        true_rew = rew
+        rew = 0.01 * true_rew
         # env.render()
         rews[i] = rew
 
+        cur_ep_true_ret += true_rew
         cur_ep_ret += rew
         cur_ep_len += 1
         if new:
             ep_rets.append(cur_ep_ret)
             ep_lens.append(cur_ep_len)
+            ep_true_rets.append(cur_ep_true_ret)
+            cur_ep_true_ret = 0
             cur_ep_ret = 0
             cur_ep_len = 0
             ob = env.reset()
@@ -91,7 +100,8 @@ def learn(env, policy_fn, *,
         schedule='constant', # annealing for stepsize parameters (epsilon and adam)
         save_model=True, # whether to save the model,
         load_model=True,
-        model_dir=None):
+        model_dir=None,
+        rw_scaler=None, filename):
     rank = MPI.COMM_WORLD.Get_rank()
 
     # Setup losses and stuff
@@ -124,7 +134,7 @@ def learn(env, policy_fn, *,
     losses = [pol_surr, pol_entpen, vf_loss, meankl, meanent]
     loss_names = ["pol_surr", "pol_entpen", "vf_loss", "kl", "ent"]
 
-#    var_list = pi.get_trainable_variables()[:-6]
+
     var_list = pi.get_trainable_variables()
     lossandgrad = U.function([ob, ac, atarg, ret, lrmult], losses + [U.flatgrad(total_loss, var_list)])
     adam = MpiAdam(var_list, epsilon=adam_epsilon)
@@ -133,16 +143,20 @@ def learn(env, policy_fn, *,
         for (oldv, newv) in zipsame(oldpi.get_variables(), pi.get_variables())])
     compute_losses = U.function([ob, ac, atarg, ret, lrmult], losses)
 
-    U.initialize()
+    initialize_uninitialized(tf.get_default_session())
+    #U.initialize()
     adam.sync()
 
     # Load existing model
     if load_model:
         U.load_state(os.path.join(model_dir, "model"))
 
+    # Reinitialize exploration
+    #reinitialize_exploration(tf.get_default_session())
+
     # Prepare for rollouts
     # ----------------------------------------
-    seg_gen = traj_segment_generator(pi, env, timesteps_per_actorbatch, stochastic=True)
+    seg_gen = traj_segment_generator(pi, env, timesteps_per_actorbatch, stochastic=True, rw_scaler = rw_scaler)
 
     episodes_so_far = 0
     timesteps_so_far = 0
@@ -150,12 +164,13 @@ def learn(env, policy_fn, *,
     tstart = time.time()
     lenbuffer = deque(maxlen=100) # rolling buffer for episode lengths
     rewbuffer = deque(maxlen=100) # rolling buffer for episode rewards
+    true_rewbuffer = deque(maxlen=100)
 
     assert sum([max_iters>0, max_timesteps>0, max_episodes>0, max_seconds>0])==1, "Only one time constraint permitted"
 
     # Set up logging stuff only for a single worker.
     if rank == 0:
-        saver = tf.train.Saver() 
+        saver = tf.train.Saver()
         if not os.path.exists(os.path.join(logger.get_dir(), 'model')):
             os.makedirs(os.path.join(logger.get_dir(), 'model'))
     else:
@@ -192,6 +207,7 @@ def learn(env, policy_fn, *,
         optim_batchsize = optim_batchsize or ob.shape[0]
 
         if hasattr(pi, "ob_rms"): pi.ob_rms.update(ob) # update running mean/std for policy
+        if hasattr(rw_scaler, "rw_rms"): rw_scaler.rw_rms.update(seg["rew"]) # update running mean/std for policy
 
         assign_old_eq_new() # set old parameter values to new parameter values
         logger.log("Optimizing...")
@@ -215,11 +231,13 @@ def learn(env, policy_fn, *,
         for (lossval, name) in zipsame(meanlosses, loss_names):
             logger.record_tabular("loss_"+name, lossval)
         logger.record_tabular("ev_tdlam_before", explained_variance(vpredbefore, tdlamret))
-        lrlocal = (seg["ep_lens"], seg["ep_rets"]) # local values
+        lrlocal = (seg["ep_lens"], seg["ep_rets"], seg["ep_true_rets"]) # local values
         listoflrpairs = MPI.COMM_WORLD.allgather(lrlocal) # list of tuples
-        lens, rews = map(flatten_lists, zip(*listoflrpairs))
+        lens, rews, true_rews = map(flatten_lists, zip(*listoflrpairs))
         lenbuffer.extend(lens)
         rewbuffer.extend(rews)
+        true_rewbuffer.extend(true_rews)
+        logger.record_tabular("EpTrueRewMean", np.mean(true_rewbuffer))
         logger.record_tabular("EpLenMean", np.mean(lenbuffer))
         logger.record_tabular("EpRewMean", np.mean(rewbuffer))
         logger.record_tabular("EpThisIter", len(lens))
@@ -232,10 +250,33 @@ def learn(env, policy_fn, *,
         if rank == 0:
             logger.dump_tabular()
             if save_model: #Save model
-                # sess = U.get_session()
-                # constant_graph = graph_util.convert_variables_to_constants(sess, sess.graph.as_graph_def(), ['pi/output_node'])
-                # graph_io.write_graph(constant_graph, '.', 'output_graph.pb', as_text=False)
+                sess = tf.get_default_session()
+                constant_graph = graph_util.convert_variables_to_constants(sess, sess.graph.as_graph_def(), ['pi/output_node'])
+                graph_io.write_graph(constant_graph, logger.get_dir(), filename + '.pb', as_text=False)
                 saver.save(tf.get_default_session(), os.path.join(logger.get_dir(),'model', 'model'))
 
 def flatten_lists(listoflists):
     return [el for list_ in listoflists for el in list_]
+
+def initialize_uninitialized(sess):
+    global_vars          = tf.global_variables()
+    is_not_initialized   = sess.run([tf.is_variable_initialized(var) for var in global_vars])
+    not_initialized_vars = [v for (v, f) in zip(global_vars, is_not_initialized) if not f]
+
+    for i in not_initialized_vars:
+        print (str(i.name))
+    if len(not_initialized_vars):
+        sess.run(tf.variables_initializer(not_initialized_vars))
+
+def reinitialize_exploration(sess):
+    global_vars = tf.global_variables()
+    expl_vars = []
+    for var in global_vars:
+        if str(var.name) == 'pi/logstd:0' or  str(var.name) == 'oldpi/logstd:0':
+            expl_vars.append(var)
+    
+    for i in expl_vars:
+        print (str(i.name))
+    
+    if len(expl_vars):
+        sess.run(tf.variables_initializer(expl_vars))
