@@ -25,42 +25,27 @@ class WalkPolicy(object):
 
         ob = U.get_placeholder(name="ob", dtype=tf.float32, shape=[sequence_length] + list(ob_space.shape))
         
-        # with tf.variable_scope("obfilter"):
-        #     self.ob_rms = RunningMeanStd(shape=ob_space.shape)
+        with tf.variable_scope("obfilter"):
+            self.ob_rms = RunningMeanStd(shape=ob_space.shape)
 
-        # obz = tf.clip_by_value((ob - self.ob_rms.mean) / self.ob_rms.std, -5.0, 5.0)
+        obz = tf.clip_by_value((ob - self.ob_rms.mean) / self.ob_rms.std, -5.0, 5.0)
         obz = ob
 
         valueFunction = Sequential()
         valueFunction.add(InputLayer(input_tensor = obz))
-        valueFunction.add(Dense(128, activation = 'tanh'))
-        valueFunction.add(Dense(128, activation = 'tanh'))
-        valueFunction.add(Dense(128, activation = 'tanh'))
-        valueFunction.add(Dense(128, activation = 'tanh'))
-        valueFunction.add(Dense(128, activation = 'tanh'))
-        valueFunction.add(Dense(128, activation = 'tanh'))
-        valueFunction.add(Dense(128, activation = 'tanh'))
         valueFunction.add(Dense(64, activation = 'tanh'))
-        valueFunction.add(Dense(14))
-        valueFunction.load_weights('neural_walk')
+        valueFunction.add(Dense(64, activation = 'tanh'))
+        valueFunction.add(Dense(20))
         
 
         self.vpred = self.dense(x = valueFunction.output, size = 1, name = "vffinal", weight_init = U.normc_initializer(1.0), bias = True)[:,0]
 
         model =  Sequential()
         model.add(InputLayer(input_tensor = obz))
-        model.add(Dense(128, activation = 'tanh'))
-        model.add(Dense(128, activation = 'tanh'))
-        model.add(Dense(128, activation = 'tanh'))
-        model.add(Dense(128, activation = 'tanh'))
-        model.add(Dense(128, activation = 'tanh'))
-        model.add(Dense(128, activation = 'tanh'))
-        model.add(Dense(128, activation = 'tanh'))
         model.add(Dense(64, activation = 'tanh'))
-        model.add(Dense(14))
+        model.add(Dense(64, activation = 'tanh'))
+        model.add(Dense(20))
 
-
-        model.load_weights('neural_walk')
         
         if gaussian_fixed_var and isinstance(ac_space, gym.spaces.Box):
             mean = model.output            
@@ -80,7 +65,7 @@ class WalkPolicy(object):
         self._act = U.function([stochastic, ob], [ac, self.vpred])
 
     def act(self, stochastic, ob):
-        ac1, vpred1 =  self._act(False, ob[None])
+        ac1, vpred1 =  self._act(stochastic, ob[None])
         return ac1[0], vpred1[0]
     def get_variables(self):
         return tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, self.scope)
