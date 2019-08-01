@@ -4,13 +4,13 @@ import tensorflow as tf
 import gym
 from baselines.common.distributions import make_pdtype
 
-from keras.layers import Input, Dense, Activation, BatchNormalization, Dropout, InputLayer
+from keras.layers import Input, Dense, Activation, BatchNormalization, LSTM, InputLayer
 from keras.models import Model, Sequential
 from keras.layers import LeakyReLU
 import numpy as np
 
 class WalkPolicy(object):
-    recurrent = False
+    recurrent = True
      
     def __init__(self, name, *args, **kwargs):
         with tf.variable_scope(name):
@@ -28,15 +28,19 @@ class WalkPolicy(object):
         with tf.variable_scope("obfilter"):
             self.ob_rms = RunningMeanStd(shape=ob_space.shape)
 
-        with tf.variable_scope('vf'):
+        with tf.variable_scope("shared_parameters"):
             obz = tf.clip_by_value((ob - self.ob_rms.mean) / self.ob_rms.std, -5.0, 5.0)
-            last_out = obz
+            obz = tf.reshape(obz, [-1, 10, 43])
+            lstm_layer = tf.keras.layers.LSTM(30, input_shape=(10, 43), return_sequences=False, kernel_initializer=U.normc_initializer(1.0))(obz)
+
+        with tf.variable_scope('vf'):
+            last_out = lstm_layer
             for i in range(num_hid_layers):
                 last_out = tf.nn.tanh(tf.layers.dense(last_out, hid_size, name="fc%i"%(i+1), kernel_initializer=U.normc_initializer(1.0)))
             self.vpred = tf.layers.dense(last_out, 1, name='final', kernel_initializer=U.normc_initializer(1.0))[:,0]
 
         with tf.variable_scope('pol'):
-            last_out = obz
+            last_out = lstm_layer
             for i in range(num_hid_layers):
                 last_out = tf.nn.tanh(tf.layers.dense(last_out, hid_size, name='fc%i'%(i+1), kernel_initializer=U.normc_initializer(1.0)))
             if gaussian_fixed_var and isinstance(ac_space, gym.spaces.Box):
