@@ -139,7 +139,7 @@ def learn(env, policy_fn, *,
     surr1 = ratio * atarg # surrogate from conservative policy iteration
     surr2 = tf.clip_by_value(ratio, 1.0 - clip_param, 1.0 + clip_param) * atarg #
     pol_surr = - tf.reduce_mean(tf.minimum(surr1, surr2)) # PPO's pessimistic surrogate (L^CLIP)
-    pol_surr += - 4*tf.reduce_mean(tf.square(ac - mirror_ac)) # Auxiliary Loss added to the PPO Loss
+    pol_surr += - 4*tf.reduce_sum(tf.square(ac - mirror_ac)) # Auxiliary Loss added to the PPO Loss
     vf_loss = tf.reduce_mean(tf.square(pi.vpred - ret))
     total_loss = pol_surr + pol_entpen + vf_loss
     losses = [pol_surr, pol_entpen, vf_loss, meankl, meanent]
