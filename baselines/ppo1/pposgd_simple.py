@@ -32,7 +32,7 @@ def traj_segment_generator(pi, env, horizon, stochastic, rw_scaler):
     vpreds = np.zeros(horizon, 'float32')
     news = np.zeros(horizon, 'int32')
     acs = np.array([ac for _ in range(horizon)])
-    mirror_acs = np.array([ac for _ in range(horizon)])
+    diffs_for_auxiliary_loss = np.zeros(horizon, 'float32')
     prevacs = acs.copy()
 
     while True:
@@ -40,15 +40,21 @@ def traj_segment_generator(pi, env, horizon, stochastic, rw_scaler):
         # print ("Obs: ", ob)
         # print (type(ob))
         ac, vpred = pi.act(stochastic, ob)
-        aux_mirror_ac , mirror_vpred = pi.act(stochastic, mirror.mirror_state(ob))
-        mirror_ac = mirror.mirror_array_of_joints(aux_mirror_ac, 0)
+
+        #Pi_{teta}(Mirror_{state}) = ac_from_mirrored_state
+        ac_from_mirrored_state , mirror_vpred = pi.act(stochastic, mirror.mirror_state(ob))
+
+        #Mirror_{action}(Pi_{teta}) = mirror_ac
+        mirror_ac = mirror.mirror_array_of_joints(ac)
+
+        diff_for_auxiliary_loss = [np.sum(np.square(ac_from_mirrored_state - mirror_ac))]
 
         # Slight weirdness here because we need value function at time T
         # before returning segment [0, T-1] so we get the correct
         # terminal value
         if t > 0 and t % horizon == 0:
             yield {"ob" : obs, "rew" : rews, "vpred" : vpreds, "new" : news,
-                    "ac" : acs, "mirror_ac" : mirror_acs, "prevac" : prevacs, "nextvpred": vpred * (1 - new),
+                    "ac" : acs, "diff_for_auxiliary_loss" : diffs_for_auxiliary_loss, "prevac" : prevacs, "nextvpred": vpred * (1 - new),
                     "ep_rets" : ep_rets, "ep_true_rets" : ep_true_rets, "ep_lens" : ep_lens}
             # Be careful!!! if you change the downstream algorithm to aggregate
             # several of these batches, then be sure to do a deepcopy
@@ -60,7 +66,7 @@ def traj_segment_generator(pi, env, horizon, stochastic, rw_scaler):
         vpreds[i] = vpred
         news[i] = new
         acs[i] = ac
-        mirror_acs[i] = mirror_ac
+        diffs_for_auxiliary_loss[i] = diff_for_auxiliary_loss
         prevacs[i] = prevac
 
         ob, rew, new, _ = env.step(ac)
@@ -127,7 +133,7 @@ def learn(env, policy_fn, *,
 
     ob = U.get_placeholder_cached(name="ob")
     ac = pi.pdtype.sample_placeholder([None])
-    mirror_ac = pi.pdtype.sample_placeholder([None])
+    diff_for_auxiliary_loss = tf.placeholder(dtype=tf.float32, shape=[None]) # 
 
     kloldnew = oldpi.pd.kl(pi.pd)
     ent = pi.pd.entropy()
@@ -139,7 +145,7 @@ def learn(env, policy_fn, *,
     surr1 = ratio * atarg # surrogate from conservative policy iteration
     surr2 = tf.clip_by_value(ratio, 1.0 - clip_param, 1.0 + clip_param) * atarg #
     pol_surr = - tf.reduce_mean(tf.minimum(surr1, surr2)) # PPO's pessimistic surrogate (L^CLIP)
-    pol_surr += - 4*tf.reduce_sum(tf.square(ac - mirror_ac)) # Auxiliary Loss added to the PPO Loss
+    pol_surr += - 4*tf.reduce_sum(diff_for_auxiliary_loss) # Auxiliary Loss added to the PPO Loss
     vf_loss = tf.reduce_mean(tf.square(pi.vpred - ret))
     total_loss = pol_surr + pol_entpen + vf_loss
     losses = [pol_surr, pol_entpen, vf_loss, meankl, meanent]
@@ -147,12 +153,12 @@ def learn(env, policy_fn, *,
 
 
     var_list = pi.get_trainable_variables()
-    lossandgrad = U.function([ob, ac, mirror_ac, atarg, ret, lrmult], losses + [U.flatgrad(total_loss, var_list)])
+    lossandgrad = U.function([ob, ac, diff_for_auxiliary_loss, atarg, ret, lrmult], losses + [U.flatgrad(total_loss, var_list)])
     adam = MpiAdam(var_list, epsilon=adam_epsilon)
 
     assign_old_eq_new = U.function([],[], updates=[tf.assign(oldv, newv)
         for (oldv, newv) in zipsame(oldpi.get_variables(), pi.get_variables())])
-    compute_losses = U.function([ob, ac, mirror_ac, atarg, ret, lrmult], losses)
+    compute_losses = U.function([ob, ac, diff_for_auxiliary_loss, atarg, ret, lrmult], losses)
 
     initialize_uninitialized(tf.get_default_session())
     #U.initialize()
@@ -210,11 +216,11 @@ def learn(env, policy_fn, *,
         seg = seg_gen.__next__()
         add_vtarg_and_adv(seg, gamma, lam)
 
-        # ob, ac, mirror_ac, atarg, ret, td1ret = map(np.concatenate, (obs, acs, atargs, rets, td1rets))
-        ob, ac, mirror_ac, atarg, tdlamret = seg["ob"], seg["ac"], seg["mirror_ac"], seg["adv"], seg["tdlamret"]
+        # ob, ac, diff_for_auxiliary_loss, atarg, ret, td1ret = map(np.concatenate, (obs, acs, atargs, rets, td1rets))
+        ob, ac, diff_for_auxiliary_loss, atarg, tdlamret = seg["ob"], seg["ac"], seg["diff_for_auxiliary_loss"], seg["adv"], seg["tdlamret"]
         vpredbefore = seg["vpred"] # predicted value function before udpate
         atarg = (atarg - atarg.mean()) / atarg.std() # standardized advantage function estimate
-        d = Dataset(dict(ob=ob, ac=ac, mirror_ac= mirror_ac, atarg=atarg, vtarg=tdlamret), shuffle=not pi.recurrent)
+        d = Dataset(dict(ob=ob, ac=ac, diff_for_auxiliary_loss=diff_for_auxiliary_loss, atarg=atarg, vtarg=tdlamret), shuffle=not pi.recurrent)
         optim_batchsize = optim_batchsize or ob.shape[0]
 
         if hasattr(pi, "ob_rms"): pi.ob_rms.update(ob) # update running mean/std for policy
@@ -227,7 +233,7 @@ def learn(env, policy_fn, *,
         for _ in range(optim_epochs):
             losses = [] # list of tuples, each of which gives the loss for a minibatch
             for batch in d.iterate_once(optim_batchsize):
-                *newlosses, g = lossandgrad(batch["ob"], batch["ac"], batch["mirror_ac"], batch["atarg"], batch["vtarg"], cur_lrmult)
+                *newlosses, g = lossandgrad(batch["ob"], batch["ac"], batch["diff_for_auxiliary_loss"], batch["atarg"], batch["vtarg"], cur_lrmult)
                 adam.update(g, optim_stepsize * cur_lrmult)
                 losses.append(newlosses)
             logger.log(fmt_row(13, np.mean(losses, axis=0)))
@@ -235,7 +241,7 @@ def learn(env, policy_fn, *,
         logger.log("Evaluating losses...")
         losses = []
         for batch in d.iterate_once(optim_batchsize):
-            newlosses = compute_losses(batch["ob"], batch["ac"], batch["mirror_ac"], batch["atarg"], batch["vtarg"], cur_lrmult)
+            newlosses = compute_losses(batch["ob"], batch["ac"], batch["diff_for_auxiliary_loss"], batch["atarg"], batch["vtarg"], cur_lrmult)
             losses.append(newlosses)
         meanlosses,_,_ = mpi_moments(losses, axis=0)
         logger.log(fmt_row(13, meanlosses))

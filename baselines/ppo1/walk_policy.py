@@ -9,7 +9,7 @@ from keras.models import Model, Sequential
 from keras.layers import LeakyReLU
 import numpy as np
 
-class KickPolicy(object):
+class WalkPolicy(object):
     recurrent = False
      
     def __init__(self, name, *args, **kwargs):
@@ -25,32 +25,28 @@ class KickPolicy(object):
 
         ob = U.get_placeholder(name="ob", dtype=tf.float32, shape=[sequence_length] + list(ob_space.shape))
         
-        # with tf.variable_scope("obfilter"):
-        #     self.ob_rms = RunningMeanStd(shape=ob_space.shape)
+        with tf.variable_scope("obfilter"):
+            self.ob_rms = RunningMeanStd(shape=ob_space.shape)
 
-        # obz = tf.clip_by_value((ob - self.ob_rms.mean) / self.ob_rms.std, -5.0, 5.0)
-        obz = ob
+        with tf.variable_scope('vf'):
+            obz = tf.clip_by_value((ob - self.ob_rms.mean) / self.ob_rms.std, -5.0, 5.0)
+            last_out = obz
+            for i in range(num_hid_layers):
+                last_out = tf.nn.tanh(tf.layers.dense(last_out, hid_size, name="fc%i"%(i+1), kernel_initializer=U.normc_initializer(1.0)))
+            self.vpred = tf.layers.dense(last_out, 1, name='final', kernel_initializer=U.normc_initializer(1.0))[:,0]
 
-        valueFunction = Sequential()
-        valueFunction.add(InputLayer(input_tensor = obz))
-        valueFunction.add(Dense(64, activation='tanh'))
-        valueFunction.add(Dense(64, activation='tanh'))
+        with tf.variable_scope('pol'):
+            last_out = obz
+            for i in range(num_hid_layers):
+                last_out = tf.nn.tanh(tf.layers.dense(last_out, hid_size, name='fc%i'%(i+1), kernel_initializer=U.normc_initializer(1.0)))
+            if gaussian_fixed_var and isinstance(ac_space, gym.spaces.Box):
+                mean = tf.layers.dense(last_out, pdtype.param_shape()[0]//2, name='final', kernel_initializer=U.normc_initializer(0.01))
+                logstd = tf.get_variable(name="logstd", shape=[1, pdtype.param_shape()[0]//2], initializer=tf.constant_initializer(exploration_rate))
+                pdparam = tf.concat([mean, mean * 0.0 + logstd], axis=1)
+            else:
+                pdparam = tf.layers.dense(last_out, pdtype.param_shape()[0], name='final', kernel_initializer=U.normc_initializer(0.01))
 
-        self.vpred = self.dense(x = valueFunction.output, size = 1, name = "vffinal", weight_init = U.normc_initializer(1.0), bias = True)[:,0]
 
-        model =  Sequential()
-        model.add(InputLayer(input_tensor = obz))
-        model.add(Dense(64, activation='tanh'))
-        model.add(Dense(64, activation='tanh'))
-        model.add(Dense(23))
-        model.load_weights("neural_kick")
-        
-        if gaussian_fixed_var and isinstance(ac_space, gym.spaces.Box):
-            mean = model.output            
-            logstd = tf.get_variable(name="logstd", shape=[1, pdtype.param_shape()[0]//2], initializer=tf.constant_initializer(exploration_rate))
-            pdparam = tf.concat([mean, mean * 0.0 + logstd], axis=1)
-        else:
-            pdparam = tf.layers.dense(model.output, pdtype.param_shape()[0], "polfinal", U.normc_initializer(0.01))
         my_var = tf.strided_slice(mean, [0], [1], [1], shrink_axis_mask=1)
         my_var_out = tf.identity(my_var, name='output_node')
         self.pd = pdtype.pdfromflat(pdparam)
@@ -73,10 +69,10 @@ class KickPolicy(object):
         return []
 
     def dense(self, x, size, name, weight_init=None, bias=True):
-     w = tf.get_variable(name + "/w", [x.get_shape()[1], size], initializer=weight_init)
-     ret = tf.matmul(x, w)
-     if bias:
-         b = tf.get_variable(name + "/b", [size], initializer=tf.zeros_initializer())
-         return ret + b
-     else:
-         return ret
+        w = tf.get_variable(name + "/w", [x.get_shape()[1], size], initializer=weight_init)
+        ret = tf.matmul(x, w)
+        if bias:
+            b = tf.get_variable(name + "/b", [size], initializer=tf.zeros_initializer())
+            return ret + b
+        else:
+            return ret

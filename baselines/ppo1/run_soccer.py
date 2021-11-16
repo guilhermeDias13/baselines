@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 from mpi4py import MPI
 from baselines.common import boolean_flag, set_global_seeds, tf_util as U
 from baselines import bench
@@ -14,8 +13,9 @@ from core.soccer_env import SoccerEnv
 
 
 def train(env_id, num_timesteps, seed, save_model, load_model, model_dir, timesteps_per_actorbatch,
-        clip_param, ent_coeff, epochs, learning_rate, batch_size, gamma, lambd, exploration_rate, filename):
-    from baselines.ppo1 import kick_policy, pposgd_simple, reward_scaler
+        clip_param, ent_coeff, epochs, learning_rate, batch_size, gamma, lambd, exploration_rate, 
+        num_hidden_layers, hidden_size, lr_schedule, filename):
+    from baselines.ppo1 import walk_policy, pposgd_simple, reward_scaler
     rank = MPI.COMM_WORLD.Get_rank()
     U.make_session(num_cpu=1).__enter__()
     workerseed = seed + 10000 * rank
@@ -23,8 +23,8 @@ def train(env_id, num_timesteps, seed, save_model, load_model, model_dir, timest
     env = SoccerEnv(rank)
 
     def policy_fn(name, ob_space, ac_space):
-        return kick_policy.KickPolicy(name=name, ob_space=ob_space, ac_space=ac_space,
-                                    hid_size=64, num_hid_layers=2, exploration_rate = exploration_rate)
+        return walk_policy.WalkPolicy(name=name, ob_space=ob_space, ac_space=ac_space,
+                                    hid_size=hidden_size, num_hid_layers=num_hidden_layers, exploration_rate = exploration_rate)
     env = bench.Monitor(env, logger.get_dir())
     env.seed(workerseed)
     gym.logger.setLevel(logging.WARN)
@@ -35,7 +35,7 @@ def train(env_id, num_timesteps, seed, save_model, load_model, model_dir, timest
                         timesteps_per_actorbatch=timesteps_per_actorbatch,
                         clip_param=clip_param, entcoeff=ent_coeff,
                         optim_epochs=epochs, optim_stepsize=learning_rate, optim_batchsize=batch_size,
-                        gamma=gamma, lam=lambd, schedule='linear',
+                        gamma=gamma, lam=lambd, schedule=lr_schedule,
                         save_model=save_model, load_model=load_model, model_dir=model_dir, 
                         rw_scaler=rw_scaler, filename=filename
                         )
@@ -53,19 +53,29 @@ def main():
     boolean_flag(parser, 'load-model', default=False)
     parser.add_argument('--model-dir')
     parser.add_argument('--timesteps_per_actorbatch', type=int, default=4096)
-    parser.add_argument('--clip_param', type=float, default=0.29)
-    parser.add_argument('--ent_coeff', type=float, default=0.01)
-    parser.add_argument('--epochs', type=int, default=30)
-    parser.add_argument('--learning_rate', type=float, default=1e-6)
-    parser.add_argument('--batch_size', type=int, default=1024)
-    parser.add_argument('--gamma', type=float, default=0.999)
-    parser.add_argument('--lambd', type=float, default=1.0)
-    parser.add_argument('--exploration_rate', type=float, default=-6)
+    parser.add_argument('--clip_param', type=float, default=0.1)
+    parser.add_argument('--ent_coeff', type=float, default=0.00)
+    parser.add_argument('--epochs', type=int, default=10)
+    parser.add_argument('--learning_rate', type=float, default=1e-4)
+    parser.add_argument('--batch_size', type=int, default=64)
+    parser.add_argument('--gamma', type=float, default=0.99)
+    parser.add_argument('--lambd', type=float, default=0.95)
+    parser.add_argument('--exploration_rate', type=float, default=0)
+    parser.add_argument('--num_hidden_layers', type=int, default=2)
+    parser.add_argument('--hidden_size', type=int, default=64)
+    parser.add_argument('--lr_schedule', type=str, default='constant')
+    parser.add_argument('--height', type=float, default=-1)
     args = parser.parse_args()
     # logger.configure()
 
-    filename = str(args.timesteps_per_actorbatch) + "_" + str(args.clip_param) + "_" + str(args.ent_coeff) + "_" + str(args.epochs) + \
-        "_" + str(args.learning_rate) + "_" + str(args.batch_size) + "_" + str(args.gamma) + "_" + str(args.lambd) + "_" + str(args.exploration_rate)
+    md = ""
+    if args.load_model:
+        print(str(args.model_dir))
+        md = str(args.model_dir)
+
+    filename = str(args.height) + "_____" + str(args.timesteps_per_actorbatch) + "_" + str(args.clip_param) + "_" + str(args.ent_coeff) + "_" + str(args.epochs) + \
+        "_" + str(args.learning_rate) + "_" + str(args.batch_size) + "_" + str(args.gamma) + "_" + str(args.lambd) + "_" + str(args.exploration_rate) + \
+        "_" + str(args.num_hidden_layers) + "_" + str(args.hidden_size) + "_" + str(args.lr_schedule)
     
     print(filename)
 
@@ -78,7 +88,8 @@ def main():
           timesteps_per_actorbatch=args.timesteps_per_actorbatch, clip_param=args.clip_param,
           ent_coeff=args.ent_coeff, epochs=args.epochs, learning_rate=args.learning_rate,
           batch_size=args.batch_size, gamma=args.gamma, lambd=args.lambd, 
-          exploration_rate=args.exploration_rate, filename = filename)
+          exploration_rate=args.exploration_rate, num_hidden_layers=args.num_hidden_layers,
+          hidden_size=args.hidden_size, lr_schedule=args.lr_schedule, filename=filename)
 
 if __name__ == '__main__':
     main()
