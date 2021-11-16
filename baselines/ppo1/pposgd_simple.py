@@ -47,7 +47,7 @@ def traj_segment_generator(pi, env, horizon, stochastic, rw_scaler):
         #Mirror_{action}(Pi_{teta}) = mirror_ac
         mirror_ac = mirror.mirror_array_of_joints(ac)
 
-        diff_for_auxiliary_loss = [np.sum(np.square(ac_from_mirrored_state - mirror_ac))]
+        diff_for_auxiliary_loss = np.sum(np.square(ac_from_mirrored_state - mirror_ac))
 
         # Slight weirdness here because we need value function at time T
         # before returning segment [0, T-1] so we get the correct
